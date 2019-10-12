@@ -1,0 +1,155 @@
+===============================================================================
+DESIGN DOCUMENT
+===============================================================================
+
+--------
+Overview
+--------
+
+This application is a scalable, available, modular, and distributed object/blob
+store. The client-server implementation architecture allows users to upload, 
+download, delete, and view objects stored on the server file system.
+
+The program is implemented in the Python 2.7 language (Python 3.x was not 
+available at the time of program development), and utilizes stream sockets
+as the underlying method for data transmission between the client and the server.
+Utilizing TCP guarantees that the transmission of data occurs in order and 
+without error.
+
+
+--------------
+File Structure
+--------------
+
+Due to this application being fairly straightforward, both the client and
+server code are each contained in a single file (client.py and server.py, 
+respectively).
+
+
+--------------------
+Program Architecture
+--------------------
+
+Server:
+
+The server program manages the distribution of user objects over several 
+specified server machines/disks. The object storage hierarchy is as follows:
+
+    - Account:  This represents the top level of the hierarchy. When a user first
+                uploads an object, the server will create an account for him/her.
+                All of the user's objects will be stored under this name.
+
+    - Object:   This stores data content, and can be uploaded, downloaded, 
+                deleted, or listed by the client user.
+
+    -> Resource path: /{account}/{object}
+
+When running the server command, the specified partition power (first argument)
+needs to be in the range of 10 to 24. A minimum of 10 is necessary to achieve
+a good range of hash values, decreasing the number of possible object collisions.
+Also, being mindful of the university server resources, an upper limit is placed
+to prevent the program from hanging due to the server having to allocate too
+many resources. Besides the partition power, at least two server machine names
+need to be specified. At least two are required to hold users' objects' primary
+and backup copies (copies need to exist on separate machines for data integrity
+and backup purposes).
+
+When the server program is first run, it automatically finds an available port
+on the network on which to listen for client connections. The program utilizes
+multithreading to allow for multiple, concurrent clients to contact the server,
+each running in its own thread. The server runs infinitely, as well as each
+client thread, until they are terminated manually.
+
+The server program utilizes three main data structures for keeping track of
+vital data:
+
+    - Server machine    This is a simple array that stores the IP addresses
+      list:             of all of the server machines used for object
+                        storage. The index of each IP address element is the
+                        associated "machine number", not to be confused with
+                        the IP address itself. Here is an example:
+
+                        +----------------+---------------+
+                        | Machine number | Machine IP    |
+                        | (index)        | address       |
+                        +----------------+---------------+
+                        | 0              | 192.0.2.12    |
+                        | 1              | 192.0.2.7     |
+                        | ...            | ...           |
+                        +----------------+---------------+
+      
+
+    - Device lookup     Maps each partition to a server machine. In this context,
+      tables:           a partition is simply a method used in conjunction with
+                        consistent hashing for finding which server disk a user's
+                        object is stored on.
+
+                        The data is stored in an array with a size of 2 ^ partition
+                        power. For instance, a partition power of 10 would equate
+                        to an array of 1024 elements. The partition power is the 
+                        index of the table, and the machine number is stored as 
+                        the element. Here is an example:
+
+                        +------------------+----------------+
+                        | Partition number | Machine number |
+                        | (index)          |                |
+                        +------------------+----------------+
+                        | 0                | 1              |
+                        | 1                | 2              |
+                        | ...              | ...            |
+                        +------------------+----------------+
+
+                        There are two copies of this table, one for user objects'
+                        primary and backup copies.
+
+
+    - Object lookup     Maps each client user with their associated objects. This
+      table:            structure stores a list of current users, as well as a
+                        list of objects that are belong to each one. The number
+                        and type of objects could vary from user to user. A user
+                        is initially inserted into the table when they upload their
+                        first file
+
+                        The data is stored in a dictionary, which holds key-value
+                        pairs. In this case, the key is the user name, and the 
+                        value is a list of the names of objects they currently
+                        have on the server. Here is an example:
+
+                         +----------+----------------+
+                        | User name | User object(s) |
+                        +-----------+----------------+
+                        | user1     | fileA, fileB   |
+                        | user2     |                |
+                        | user7     | fileC          |
+                        | ...       | ...            |
+                        +-----------+----------------+
+
+    - Partition object  Associates each partition to the user/object information
+      mapper table:     pair that is stored there. This mapping table helps to quickly 
+                        find objects to be transferred during the repartitioning 
+                        process. This structure assumes that only one user/object pair
+                        will be mapped to a partition number (essentially assuming there
+                        will be no collisions with the hashing for this small scale 
+                        application).
+
+                        +------------------+------------------+
+                        | Partition number | User name/object |
+                        | (index)          |                  |
+                        +------------------+------------------+
+                        | 0                | (user7, fileC)   |
+                        | 1                | (user1, fileA)   |
+                        | ...              | ...              |
+                        +------------------+------------------+
+
+Client:
+
+The client program is simply a dummy terminal that accesses and utilizes the
+server's features. It can only be run after the server has been set up, since
+it requires the server machine name/IP address and listening port number as 
+arguments to run.
+
+Once set up, the client terminal runs in an infinite loop until terminated. Command
+syntax is evaluated on the client side, to prevent a server bottleneck. For the
+same reason, the upload and download commands are run from the client. The client
+commands include uploading, downloading, deleting, and listing of objects, in
+addition to two basic terminal commands: 'help' and 'quit'.
